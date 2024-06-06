@@ -2,13 +2,13 @@
 {
     static void Main(string[] args)
     {
-        double fieldSize = GetFieldSize();
-        double droneSize = GetDroneSize();
+        (double upperRightX, double upperRightY) = GetFieldCoordinates();
 
-        int gridPoints = (int)Math.Floor(fieldSize / droneSize);
-        List<(double X, double Y)> gridCoordinates = GenerateGridCoordinates(gridPoints, droneSize);
+        int gridPointsX = (int)Math.Floor(upperRightX);
+        int gridPointsY = (int)Math.Floor(upperRightY);
+        List<(double X, double Y)> gridCoordinates = GenerateGridCoordinates(gridPointsX, gridPointsY);
 
-        DisplayInitialGrid(gridPoints);
+        DisplayInitialGrid(gridPointsX, gridPointsY);
 
         int numberOfDrones = GetNumberOfDrones();
 
@@ -24,29 +24,28 @@
             movementsList.Add(movements);
         }
 
-        var finalPositions = ProcessMovements(initialPositions, movementsList, droneSize, fieldSize, numberOfDrones);
+        var paths = ProcessMovements(initialPositions, movementsList, upperRightX, upperRightY, numberOfDrones);
 
-        var intersections = CheckForIntersections(finalPositions, numberOfDrones);
+        var intersections = CheckForIntersections(paths, numberOfDrones);
 
-        DisplayFinalLocations(finalPositions, numberOfDrones);
+        DisplayFinalLocations(paths, numberOfDrones);
         DisplayIntersections(intersections);
 
-        DrawGridWithDrones(gridPoints, droneSize, finalPositions, numberOfDrones);
+        DrawGridWithDrones(gridPointsX, gridPointsY, paths, numberOfDrones, intersections);
 
         Console.WriteLine("Press any key to exit...");
         Console.ReadKey();
     }
 
-    static double GetFieldSize()
+    static (double upperRightX, double upperRightY) GetFieldCoordinates()
     {
-        Console.Write("Enter the size of the field (in meters, square field): ");
-        return double.Parse(Console.ReadLine());
-    }
+        Console.Write("Enter the X coordinate of the upper-right corner of the field: ");
+        double upperRightX = double.Parse(Console.ReadLine());
 
-    static double GetDroneSize()
-    {
-        Console.Write("Enter the size of the drone (in meters): ");
-        return double.Parse(Console.ReadLine());
+        Console.Write("Enter the Y coordinate of the upper-right corner of the field: ");
+        double upperRightY = double.Parse(Console.ReadLine());
+
+        return (upperRightX, upperRightY);
     }
 
     static int GetNumberOfDrones()
@@ -55,16 +54,16 @@
         return int.Parse(Console.ReadLine());
     }
 
-    static List<(double X, double Y)> GenerateGridCoordinates(int gridPoints, double droneSize)
+    static List<(double X, double Y)> GenerateGridCoordinates(int gridPointsX, int gridPointsY)
     {
         var gridCoordinates = new List<(double X, double Y)>();
 
-        for (int i = 0; i <= gridPoints; i++)
+        for (int i = 0; i <= gridPointsX; i++)
         {
-            for (int j = 0; j <= gridPoints; j++)
+            for (int j = 0; j <= gridPointsY; j++)
             {
-                double x = i * droneSize;
-                double y = j * droneSize;
+                double x = i;
+                double y = j;
                 gridCoordinates.Add((x, y));
             }
         }
@@ -72,12 +71,12 @@
         return gridCoordinates;
     }
 
-    static void DisplayInitialGrid(int gridPoints)
+    static void DisplayInitialGrid(int gridPointsX, int gridPointsY)
     {
         Console.WriteLine("Initial Grid:");
-        for (int y = gridPoints; y >= 0; y--)
+        for (int y = gridPointsY; y >= 0; y--)
         {
-            for (int x = 0; x <= gridPoints; x++)
+            for (int x = 0; x <= gridPointsX; x++)
             {
                 Console.Write(". ");
             }
@@ -127,9 +126,9 @@
         return movements;
     }
 
-    static List<(double X, double Y)> ProcessMovements(List<(double X, double Y)> initialPositions, List<string> movementsList, double droneSize, double fieldSize, int numberOfDrones)
+    static List<List<(double X, double Y)>> ProcessMovements(List<(double X, double Y)> initialPositions, List<string> movementsList, double upperRightX, double upperRightY, int numberOfDrones)
     {
-        var finalPositions = new List<(double X, double Y)>();
+        var paths = new List<List<(double X, double Y)>>();
 
         for (int i = 0; i < numberOfDrones; i++)
         {
@@ -137,38 +136,43 @@
             double currentY = initialPositions[i].Y;
             string movements = movementsList[i];
 
+            var path = new List<(double X, double Y)>();
+            path.Add((currentX, currentY));
+
             foreach (char move in movements)
             {
                 switch (move)
                 {
                     case 'N':
-                        currentY += droneSize;
+                        currentY += 1;
                         break;
                     case 'S':
-                        currentY -= droneSize;
+                        currentY -= 1;
                         break;
                     case 'E':
-                        currentX += droneSize;
+                        currentX += 1;
                         break;
                     case 'W':
-                        currentX -= droneSize;
+                        currentX -= 1;
                         break;
                 }
 
-                if (currentX < 0 || currentX > fieldSize || currentY < 0 || currentY > fieldSize)
+                if (currentX < 0 || currentX > upperRightX || currentY < 0 || currentY > upperRightY)
                 {
                     Console.WriteLine($"Drone {i + 1} moved outside the field to ({currentX}, {currentY}). Movement stopped.");
                     break;
                 }
+
+                path.Add((currentX, currentY));
             }
 
-            finalPositions.Add((currentX, currentY));
+            paths.Add(path);
         }
 
-        return finalPositions;
+        return paths;
     }
 
-    static List<(int Drone1, int Drone2, double X, double Y)> CheckForIntersections(List<(double X, double Y)> finalPositions, int numberOfDrones)
+    static List<(int Drone1, int Drone2, double X, double Y)> CheckForIntersections(List<List<(double X, double Y)>> paths, int numberOfDrones)
     {
         var intersections = new List<(int Drone1, int Drone2, double X, double Y)>();
         double tolerance = 0.01;
@@ -177,10 +181,18 @@
         {
             for (int j = i + 1; j < numberOfDrones; j++)
             {
-                if (Math.Abs(finalPositions[i].X - finalPositions[j].X) < tolerance &&
-                    Math.Abs(finalPositions[i].Y - finalPositions[j].Y) < tolerance)
+                var path1 = paths[i];
+                var path2 = paths[j];
+
+                foreach (var coord1 in path1)
                 {
-                    intersections.Add((i + 1, j + 1, finalPositions[i].X, finalPositions[i].Y));
+                    foreach (var coord2 in path2)
+                    {
+                        if (Math.Abs(coord1.X - coord2.X) < tolerance && Math.Abs(coord1.Y - coord2.Y) < tolerance)
+                        {
+                            intersections.Add((i + 1, j + 1, coord1.X, coord1.Y));
+                        }
+                    }
                 }
             }
         }
@@ -188,13 +200,13 @@
         return intersections;
     }
 
-
-    static void DisplayFinalLocations(List<(double X, double Y)> finalPositions, int numberOfDrones)
+    static void DisplayFinalLocations(List<List<(double X, double Y)>> paths, int numberOfDrones)
     {
         Console.WriteLine("Final locations of all drones:");
         for (int i = 0; i < numberOfDrones; i++)
         {
-            Console.WriteLine($"Drone {i + 1}: X: {finalPositions[i].X}, Y: {finalPositions[i].Y}");
+            var finalPosition = paths[i][paths[i].Count - 1];
+            Console.WriteLine($"Drone {i + 1}: X: {finalPosition.X}, Y: {finalPosition.Y}");
         }
     }
 
@@ -210,29 +222,46 @@
         }
     }
 
-    static void DrawGridWithDrones(int gridPoints, double droneSize, List<(double X, double Y)> finalPositions, int numberOfDrones)
+    static void DrawGridWithDrones(int gridPointsX, int gridPointsY, List<List<(double X, double Y)>> paths, int numberOfDrones, List<(int Drone1, int Drone2, double X, double Y)> intersections)
     {
         Console.WriteLine("Grid with Drones:");
-        for (int y = gridPoints; y >= 0; y--)
+        for (int y = gridPointsY; y >= 0; y--)
         {
-            for (int x = 0; x <= gridPoints; x++)
+            for (int x = 0; x <= gridPointsX; x++)
             {
                 bool isDronePosition = false;
-                for (int i = 0; i < numberOfDrones; i++)
+                bool isIntersection = false;
+
+                foreach (var intersection in intersections)
                 {
-                    if (Math.Abs(finalPositions[i].X - x * droneSize) < 1e-6 && Math.Abs(finalPositions[i].Y - y * droneSize) < 1e-6)
+                    if (Math.Abs(intersection.X - x) < 0.01 && Math.Abs(intersection.Y - y) < 0.01)
                     {
-                        Console.Write("D ");
-                        isDronePosition = true;
+                        Console.Write("I ");
+                        isIntersection = true;
                         break;
                     }
                 }
-                if (!isDronePosition)
+
+                if (!isIntersection)
+                {
+                    for (int i = 0; i < numberOfDrones; i++)
+                    {
+                        var finalPosition = paths[i][paths[i].Count - 1];
+                        if (Math.Abs(finalPosition.X - x) < 0.01 && Math.Abs(finalPosition.Y - y) < 0.01)
+                        {
+                            Console.Write("D ");
+                            isDronePosition = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!isIntersection && !isDronePosition)
                 {
                     Console.Write(". ");
                 }
             }
             Console.WriteLine();
         }
-    } 
+    }
 }
